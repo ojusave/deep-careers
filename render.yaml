@@ -15,5 +15,9 @@ services:
         value: 24.22.1
       - key: NEXT_TELEMETRY_DISABLED
         value: "1"
+      - key: EXA_MAX_CONCURRENT_REQUESTS
+        value: "24"
+      - key: EXA_MAX_REQUESTS_PER_HOUR
+        value: "300"
       - key: EXA_API_KEY
         sync: false

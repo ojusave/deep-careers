@@ -420,9 +420,10 @@ The following are **application limits**, unless explicitly labeled otherwise. T
 
 | Setting | Value and behavior | Implementation |
 |---|---|---|
-| Per-call timeout | 150,000 ms | `DEEP_TIMEOUT_MS` |
-| Calls running at once | Up to three at once per server process; extra calls get a busy error instead of waiting in a queue | `acquireDeepSlot` |
-| In-process hourly budget | 90 starts in the previous 60 minutes per server process; failed attempts still count | `acquireDeepSlot` |
+| Per-operation timeout | 150,000 ms total, including retry backoff | `DEEP_TIMEOUT_MS` |
+| Calls running at once | Default 24 active Deep operations per server process; configurable with `EXA_MAX_CONCURRENT_REQUESTS`; extra calls get a busy error without a waiting queue | `acquireDeepSlot` |
+| In-process hourly budget | Default 300 HTTP attempts in the previous 60 minutes per server process, shared by all users; configurable with `EXA_MAX_REQUESTS_PER_HOUR`; retries and failed attempts count | `recordDeepAttempt` |
+| Provider rate-limit retries | At most two retries after an actual HTTP 429; `Retry-After` is a minimum with added jitter; otherwise exponential jitter. Backoff shares the original deadline and cancellation signal | `retry.ts`, `runDeep` |
 | Employment follow-up requests | Up to ten entries; at most two follow-ups in flight | `work-history.ts` |
 | Work findings kept | Examine the first six findings per employment response; stop at eighty total profile claims | `work-history.ts` |
 | Provider response bound | 2,500,000 bytes for streamed chunks; ordinary JSON checks string length after reading it | `limits.ts`, `response.ts`, `stream.ts` |
@@ -459,7 +460,7 @@ These numbers belong to different steps: accepting up to thirty employment rows 
 
 The 16,000-character excerpt budget can be consumed by earlier claims; all selected claims remain, but some lose excerpt context. Retained excerpts may repeat the same page introduction across many claims. There is no provider-query-length preflight or known published query cap encoded in the app. Large, repetitive query context is an optimization and evaluation concern, not a proven explanation for the earlier 400 error.
 
-The provider's own quotas are separate. Exa currently documents a default `/search` rate of 10 requests per second (10 QPS); this app's three-active/90-per-hour policy is much stricter and lives only in one process. ([Exa rate limits](https://exa.ai/docs/reference/rate-limits))
+The provider's own quotas are separate. Exa documents a Deep search limit of 5 requests per second (5 QPS). The app's active-operation and hourly guards are not a QPS limiter and live only in one process; a simultaneous burst can still receive provider 429 responses. Retries can help, but do not guarantee that every user succeeds. ([Exa rate limits](https://exa.ai/docs/reference/rate-limits))
 
 ### Call count and timing
 
@@ -473,7 +474,7 @@ The provider's own quotas are separate. Exa currently documents a default `/sear
 | Create/regenerate a resume after input checks pass | 2 |
 | One successful initial journey through a resume | N + 6 |
 
-Refreshing candidate research repeats the identity/career/employment path. Refreshing roles repeats discovery/qualification. There is no automatic provider retry, exponential backoff, cache reuse, asynchronous Agent polling, or durable resume-from-failure operation.
+Refreshing candidate research repeats the identity/career/employment path. Refreshing roles repeats discovery/qualification. Automatic provider retry is limited to HTTP 429: at most two retries, honoring `Retry-After` with jitter or using exponential jitter without it, within the original 150-second deadline. Each HTTP attempt counts toward the hourly budget. Other HTTP errors and interrupted streams are not retried. There is no admission queue, cache reuse, asynchronous Agent polling, or durable resume-from-failure operation.
 
 With ten employment entries, two initial calls plus five batches of two follow-ups could theoretically consume about **1,050 seconds** if every call approached its 150-second timeout. That exceeds the research route's 960-second hint; this is a calculated upper-bound mismatch, not an observed run time. Actual deployment timeouts must be tested. Parallel request durations also cannot be summed to claim user-perceived elapsed time.
 

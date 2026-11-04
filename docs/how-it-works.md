@@ -136,8 +136,9 @@ A full successful journey with **N employment entries uses N + 6 Deep calls**: o
 
 Important bounds are kept visible in code:
 
-- Two concurrent work-history requests; the server process allows at most three active Exa requests and 90 requests per hour.
-- Each Exa request times out after 150 seconds. API route duration settings are 960 seconds for candidate research and 360 seconds for each later workflow. Hosting platforms may impose different limits.
+- Two concurrent work-history requests per person; the server process defaults to 24 active Deep operations and 300 HTTP attempts per rolling hour, shared by all users. `EXA_MAX_CONCURRENT_REQUESTS` and `EXA_MAX_REQUESTS_PER_HOUR` configure these limits. Admission is immediate, with no waiting queue.
+- An actual Exa HTTP 429 can be retried twice, honoring `Retry-After` with added jitter or using exponential jitter when it is absent. Each HTTP attempt counts toward the budget. Other HTTP errors and partial streams are not retried.
+- Each Deep operation has one 150-second timeout including retries and backoff. Stop cancels the work. API route duration settings are 960 seconds for candidate research and 360 seconds for each later workflow. Hosting platforms may impose different limits.
 - Schemas use at most ten properties in total, including nested fields. Ten returned source pages does not mean Deep ran only ten internal searches.
 - Candidate source excerpts are capped at 40,000 characters overall, with a smaller allowance in downstream candidate context. API request bodies are limited to 400 KB.
 

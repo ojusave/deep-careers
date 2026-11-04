@@ -119,8 +119,8 @@ Return one coverage entry for this employerIndex. State no_public_detail or sour
       }
     }
   };
-  // The application has a three-request concurrency cap. Two workers leave room
-  // for another request and all in-flight work is awaited on cancellation.
+  // Each person uses two workers. The shared default allows 24 active requests,
+  // enough for ten such profiles plus headroom; cancellation awaits in-flight work.
   await Promise.all([worker(), worker()]);
   if (cancellation || options.signal?.aborted) throw cancellation ?? new AppError("Research was canceled.", 499, "CANCELED");
   const outcomes = new Map<number, Pick<WorkCoverage, "outcome" | "note">>();

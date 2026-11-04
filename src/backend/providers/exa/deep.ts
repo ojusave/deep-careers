@@ -7,7 +7,8 @@
 import type { Receipt } from "../../../shared/types.ts";
 import { citations, record } from "../../../shared/validation.ts";
 import { AppError } from "../../errors.ts";
-import { acquireDeepSlot, DEEP_TIMEOUT_MS } from "./limits.ts";
+import { acquireDeepSlot, assertDeepBudgetAvailable, recordDeepAttempt, DEEP_TIMEOUT_MS } from "./limits.ts";
+import { MAX_DEEP_ATTEMPTS, retryDelayMs, waitForRetry } from "./retry.ts";
 import { parseDeepOutput, readDeepResponse } from "./response.ts";
 import { validateDeepOutputSchema } from "./schema.ts";
 import type { DeepResponse, DeepTask, EmitActivity } from "./types.ts";
@@ -53,6 +54,7 @@ export async function runDeep(task: DeepTask, options: {
   const request = buildDeepRequest(task, !!options.emit);
   const key = process.env.EXA_API_KEY?.trim();
   if (!key) throw new AppError("Add EXA_API_KEY to the server's .env.local file, then restart the app.", 503, "EXA_NOT_CONFIGURED");
+  if (options.signal?.aborted) throw new AppError("Research was canceled.", 499, "CANCELED");
   const release = acquireDeepSlot();
   const start = Date.now();
   const timeout = AbortSignal.timeout(DEEP_TIMEOUT_MS);
@@ -62,14 +64,23 @@ export async function runDeep(task: DeepTask, options: {
     origin: activity.origin ?? "app",
     at: Date.now()
   });
-  emit({
-    id: "request",
-    label: "Awaiting Exa",
-    detail: `${stageNames[task.stage]}. A live request is being sent with type: deep.`,
-    state: "running"
-  });
   try {
-    const response = await fetch("https://api.exa.ai/search", {
+    let response: Response;
+    for (let attempt = 1; ; attempt++) {
+      signal.throwIfAborted();
+      // Check before announcing provider work. A closed stream or cancellation
+      // during this callback must not consume an HTTP attempt.
+      assertDeepBudgetAvailable();
+      if (attempt === 1) emit({
+        id: "request",
+        label: "Awaiting Exa",
+        detail: `${stageNames[task.stage]}. A live request is being sent with type: deep.`,
+        state: "running"
+      });
+      signal.throwIfAborted();
+      // Every actual HTTP attempt uses the hourly budget, including 429 retries.
+      recordDeepAttempt();
+      response = await fetch("https://api.exa.ai/search", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -78,7 +89,20 @@ export async function runDeep(task: DeepTask, options: {
       body: JSON.stringify(request),
       cache: "no-store",
       signal
-    });
+      });
+      if (response.status !== 429 || attempt >= MAX_DEEP_ATTEMPTS) break;
+      const delay = retryDelayMs(response.headers.get("retry-after"), attempt);
+      await response.body?.cancel();
+      emit({
+        id: "rate-limit-retry",
+        origin: "app",
+        label: "Exa rate limit received",
+        detail: `Retrying in ${Math.ceil(delay / 1000)}s`,
+        state: "complete"
+      });
+      // This wait shares the original timeout and cancellation signal.
+      await waitForRetry(delay, signal);
+    }
     if (!response.ok) {
       // Never relay provider error bodies: they may contain internal details.
       await response.body?.cancel();
