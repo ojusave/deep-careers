@@ -10,8 +10,6 @@ Research your experience, find relevant jobs, and build a resume with **Exa Deep
 [![Node.js](https://img.shields.io/badge/Node.js-24-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![Render](https://img.shields.io/badge/Render-Web_Service-46E3B7?logo=render&logoColor=white)](https://render.com)
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Fojusave%2Fdeep-careers)
-
 [Run locally](#run-locally) · [How it works](#how-it-works) · [Code walkthrough](docs/how-it-works.md) · [Exa integration](docs/exa-integration.md)
 
 </div>
@@ -73,26 +71,6 @@ For a local production build:
 npm run build
 PORT=3100 npm start
 ```
-
-## Deploy on Render
-
-Click **Deploy to Render** above, or create a Blueprint in the [Render Dashboard](https://dashboard.render.com) using this repository. Set `EXA_API_KEY` when prompted.
-
-The included [render.yaml](render.yaml) creates one **paid Node web service** for the UI and API. No database, worker, or persistent disk is required.
-
-| Setting | Value |
-| --- | --- |
-| Runtime | Node.js 24.22.1 |
-| Plan | `1c-2g` — 1 CPU, 2 GB RAM |
-| Region | Oregon |
-| Build | `npm ci && npm run build` |
-| Start | `npm start` |
-| Health check | `/api/health` |
-| Instances | 1 |
-
-Keep one instance: request limits and identity-choice signing live in process memory. Render supplies the public URL automatically; set `APP_ORIGIN` if you use a custom domain.
-
-After deployment, check that the page loads, `/api/health` reports `configured: true`, and a research request completes. The health endpoint checks whether a key is present; it does not validate the credential or call Exa.
 
 ## Key files
 
