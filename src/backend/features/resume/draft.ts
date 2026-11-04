@@ -33,7 +33,7 @@ export function prepareResumeInput(body: Record<string, unknown>) {
   const evidence = selectedEvidence(profile);
   const workEvidence = evidence.filter(item => !isEmploymentOnlyClaim(item.claim, profile.name));
   if (!workEvidence.length) throw new AppError("Your selected evidence describes employment history but not the work you did. Add and select a project, responsibility, or accomplishment before drafting a resume.", 409, "WORK_EVIDENCE_REQUIRED");
-  if (job.fitVersion !== 1 || !job.assessment?.length) throw new AppError("Find roles again so Deep can check this posting against your experience before drafting.", 409, "FIT_REVIEW_REQUIRED");
+  if (job.fitVersion !== 2 || !job.assessment?.length) throw new AppError("Find roles again so Deep can check this posting against your experience before drafting.", 409, "FIT_REVIEW_REQUIRED");
   const requirements = job.assessment;
   const knownEvidence = new Set(evidence.map(item => item.id));
   if (body.employmentIncluded === true) profile.employers.forEach((employer, index) => {

@@ -60,8 +60,10 @@ Entry point: [02-find-relevant-jobs.ts](../src/backend/workflows/02-find-relevan
 
 1. Validate the selected evidence and preferences. The legacy `confirmed` field means selected for use; it does not record manual review or factual verification.
 2. [discover.ts](../src/backend/features/jobs/discover.ts) asks Deep for potential openings. The requested function controls the search. Previous job titles do not replace that choice. Current employers, or the most recent employer if none is current, are removable default exclusions. Earlier employers are not automatically excluded.
-3. [qualify.ts](../src/backend/features/jobs/qualify.ts) makes one additional Deep request to inspect the shortlist's primary postings. It separates direct, transferable, and missing evidence for each requirement.
-4. Application checks withhold roles whose returned assessments fail the fit rules. They can return zero matches.
+3. [qualify.ts](../src/backend/features/jobs/qualify.ts) makes one additional Deep request to inspect the shortlist's primary postings. In that same call, Deep checks the complete search request: role, company, location, work arrangement, and other stated constraints. It also separates direct, transferable, and missing evidence for each requirement.
+4. Every returned requirement row must mark `requestMatch` as `match`. Missing, conflicting, `mismatch`, or `uncertain` decisions withhold the role, as do failures of the existing posting and evidence checks. The result can be zero matches.
+
+The local title check only rejects clear conflicts for standalone, recognized role requests. Rich requests such as “remote DevRel at Anthropic” go to Deep intact; company and location words are not required in the title. Employer exclusions are still checked locally.
 
 The fit rules require grounded posting information, at least two directly supported core responsibilities. Unknown or transferable required qualifications remain visible as gaps; these opportunities are potential matches, not a claim of complete qualification. Reviewed employment history can support date/title requirements; it cannot establish a core skill just because the person held a title.
 
@@ -73,7 +75,7 @@ Entry point: [03-create-resume.ts](../src/backend/workflows/03-create-resume.ts)
 
 **Input:** a qualified selected job and selected candidate experience. **Output:** reviewed resume content, the evidence and requirement IDs behind its bullets, and research receipts.
 
-1. [draft.ts](../src/backend/features/resume/draft.ts) checks that the job has a current-format qualification assessment and that useful work evidence exists.
+1. [draft.ts](../src/backend/features/resume/draft.ts) checks that the job has a current-format qualification assessment for the same search preferences and that useful work evidence exists. A stale assessment must be refreshed before a paid drafting request.
 2. Deep researches the selected role and drafts supported, relevant wording. Each bullet must link to selected evidence and an assessed job requirement.
 3. [review.ts](../src/backend/features/resume/review.ts) sends a separate Deep request to check factual meaning, relevance, and employer attribution. For example, collaboration with a product team must not become ownership of a product roadmap.
 4. The workflow removes unsupported material. Independent work remains separate when its employer relationship is not established.

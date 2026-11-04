@@ -6,6 +6,7 @@
 import type { Opportunity, Preferences, Profile, RequirementAssessment } from '../shared/types.ts';
 import { citations, selectedEvidence, isExcluded, record, safeUrl, strings } from '../shared/validation.ts';
 import { clarifyTargetRole, matchesTargetRole } from '../shared/jobs/role-intent.ts';
+import { matchesSearchRequest, searchRequestContext } from '../shared/jobs/request-context.ts';
 import { normalizeEmployers } from '../shared/candidate/employment.ts';
 import { AppError } from './errors.ts';
 
@@ -94,6 +95,7 @@ export function validateJob(value: unknown, preferences: Preferences): Opportuni
   if (isExcluded(company, preferences.excludedEmployers)) throw new AppError("This employer is excluded from your search.", 409, "EXCLUDED_EMPLOYER");
   const title = text(j.title, "Job title", 300, true);
   if (!matchesTargetRole(title, preferences.roles)) throw new AppError("This role does not match your requested function. Refresh the role search.", 409, "TARGET_ROLE_MISMATCH");
+  if (j.fitVersion === 2 && !matchesSearchRequest(j.requestContext, preferences)) throw new AppError("Your search changed. Find roles again before creating this resume.", 409, "SEARCH_REQUEST_CHANGED");
   const url = safeUrl(j.url);
   if (!url) throw new AppError("A valid public job posting URL is required.");
   if (Array.isArray(j.assessment) && j.assessment.length > 20) throw new AppError("Refresh this role's fit assessment.", 409, "FIT_REVIEW_REQUIRED");
@@ -123,6 +125,7 @@ export function validateJob(value: unknown, preferences: Preferences): Opportuni
     status: j.status === "open" ? "open" : "uncertain",
     sources: citations(j.sources),
     assessment,
-    fitVersion: j.fitVersion === 1 ? 1 : undefined
+    fitVersion: j.fitVersion === 2 ? 2 : undefined,
+    ...(j.fitVersion === 2 ? { requestContext: searchRequestContext(preferences) } : {})
   };
 }

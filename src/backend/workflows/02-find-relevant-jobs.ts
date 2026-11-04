@@ -35,7 +35,7 @@ export async function researchOpportunities(body: Record<string, unknown>, optio
     roleFilteredCount,
     fitFilteredCount: qualification.filteredCount,
     missingEvidence: qualification.missingEvidence,
-    fitVersion: 1,
+    fitVersion: 2,
     researchReceipts: [result.receipt, ...(qualification.receipt ? [qualification.receipt] : [])],
     grounding: [...result.grounding, ...qualification.grounding.map(item => ({
       ...item,

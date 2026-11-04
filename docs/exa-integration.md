@@ -281,13 +281,17 @@ Discovery produces candidates for assessment. It does not directly approve them.
 
 Qualification sends a single Deep request for up to six jobs. Its starting queries explicitly identify each company, title, and posting URL. It asks for the primary employer/ATS posting, current availability, core responsibilities, required qualifications, preferred criteria, and their relationship to selected candidate evidence.
 
-The returned flat requirement rows are grouped by `jobId`. A group needs 2–20 valid criteria, consistent posting URLs/status, at least one status citation to that posting, and a matching posting citation for every requirement. Tracking parameters are removed for URL comparisons without dropping job-identifying query parameters. Known aggregators, closed/unavailable postings, duplicate criteria, unknown evidence IDs, and conflicting groups are rejected.
+The same call also checks the complete original search request: function, company, location, work arrangement, industry, and other constraints. Deep returns `requestMatch: match / mismatch / uncertain` on each requirement row. It must distinguish hard constraints from soft preferences, and “Any location” does not erase a location or remote-work constraint in the role query. This adds no extra Deep call. A local title check rejects only clear conflicts for standalone, recognized role requests; it does not require every query word to occur in the title.
+
+The returned flat requirement rows are grouped by `jobId`. A group needs 2–20 valid criteria, `requestMatch: match` on every row, consistent posting URLs/status, at least one status citation to that posting, and a matching posting citation for every requirement. A missing, conflicting, mismatching, or uncertain request decision withholds the role. Tracking parameters are removed for URL comparisons without dropping job-identifying query parameters. Known aggregators, closed/unavailable postings, duplicate criteria, unknown evidence IDs, and conflicting groups are rejected.
 
 Our fit rules require at least two directly supported core responsibilities. Unknown or transferable required qualifications remain visible as gaps, not claims of complete qualification. Other core criteria may use transferable experience; preferred qualifications may remain gaps. Employment history can support dates or a stated prior title, not product ownership or technical ability. A preferred work location cannot prove residence or work authorization. These are app rules applied to Deep's judgments. ([Qualification][qualify])
 
 Employment history is included only when `employmentIncluded` is true and the row is not uncertain and has either an accepted source URL or a user-provided marker. The original positions are kept as IDs such as `employment-2`; removing another row does not change what that ID means.
 
 ### 6.4 Drafting, review, and export
+
+Before drafting, the app checks that the accepted job's search context matches the current role query, location, and employer exclusions. Old or missing qualification context must be refreshed before another paid request. This catches stale results; it is not cryptographic proof of the browser-supplied assessment.
 
 Deep writes the draft; the app does not use a separate AI writer. Each bullet must name one selected `evidenceId`, the `requirementIds` it helps demonstrate, and an employer's list position—or `-1` for independent work. The prompt forbids invented achievements, numbers, credentials, titles, and tools. If a bullet adds a number that is absent from its selected claim, the app replaces the wording with the original claim before review. Other checks remove invalid evidence links and avoid unsupported employer assignments. Skills must use phrases found in selected evidence. ([Drafting][draft])
 
@@ -305,7 +309,7 @@ Each production schema describes an outer JSON object. Its `properties` list nam
 | `candidateSchema` | `name`, `summary`, `clarification`, `employers[]` with `company / role / period / status`, `evidence[]` with `claim` | Employers ≤10; evidence ≤30; status `current / earlier / uncertain` | 10 |
 | `workEvidenceSchema` | `findings[]` with `employerIndex / claim`; `coverage[]` with `employerIndex / note / outcome` | Findings ≤30; coverage ≤10; employer index integer ≥0; outcomes `evidence_found / no_public_detail / source_unavailable` | 7 |
 | `opportunitiesSchema` | `jobs[]` with `company / title / location / url / whyMatch / evidenceIds / requirements / gaps / status` | Jobs ≤6; status `open / uncertain / closed`; evidence IDs, requirements, gaps are string arrays | 10 |
-| `qualificationSchema` | `criteria[]` with `jobId / postingUrl / postingStatus / requirement / importance / evidenceIds / support / reason` | Criteria ≤120; posting status `open / closed / unavailable`; importance `core / required / preferred`; support `direct / transferable / missing` | 9 |
+| `qualificationSchema` | `criteria[]` with `jobId / postingUrl / postingStatus / requestMatch / requirement / importance / evidenceIds / support / reason` | Criteria ≤120; posting status `open / closed / unavailable`; request match `match / mismatch / uncertain`; importance `core / required / preferred`; support `direct / transferable / missing` | 10 |
 | `roleSchema` | `summary / priorities / bullets / gaps / changes / skills`; bullet `evidenceId / text / employerIndex / requirementIds` | Bullets ≤8; employer index integer ≥−1; other lists are string arrays | 10 |
 | `draftReviewSchema` | `checks[]` with `target / supported / relevant / employerSupported / reason` | Checks ≤65; three judgment fields are booleans | 6 |
 
@@ -322,6 +326,7 @@ The earlier assessment shape nested `criteria[]` objects inside `assessments[]` 
       "jobId": "job-1",
       "postingUrl": "https://careers.example.com/jobs/123",
       "postingStatus": "open",
+      "requestMatch": "match",
       "requirement": "Own developer onboarding",
       "importance": "core",
       "evidenceIds": ["e-2"],

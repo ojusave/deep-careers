@@ -14,6 +14,7 @@ import { tailorResume } from "../../../src/backend/workflows/03-create-resume.ts
 import { AppError } from "../../../src/backend/errors.ts";
 import { candidateContext, citationsFor, grounding, hasUnsupportedNumbers, isExcluded, normalizeEmployer, safeUrl } from "../../../src/shared/validation.ts";
 import { validatePreferences, validateProfile } from "../../../src/backend/validation.ts";
+import { matchesSearchRequest, searchRequestContext } from "../../../src/shared/jobs/request-context.ts";
 import type { Activity, Grounding, Opportunity, Profile, RequirementAssessment } from "../../../src/shared/types.ts";
 
 const profile: Profile = {
@@ -30,7 +31,7 @@ const assessment: RequirementAssessment[] = [
   { id: "j1-r1", text: "Create SDK examples", importance: "core", support: "direct", evidenceIds: ["e-1"], reason: "Selected SDK examples.", sources: [{ url: postingUrl, title: "Role" }] },
   { id: "j1-r2", text: "Develop hands-on workshop materials", importance: "core", support: "direct", evidenceIds: ["e-1"], reason: "Selected developer workshop material.", sources: [{ url: postingUrl, title: "Role" }] },
 ];
-const job: Opportunity = { id: "j1", company: "Example New", title: "Developer Advocate", location: "Remote", url: postingUrl, whyMatch: "Relevant workshop experience", requirements: assessment.map(item => item.text), gaps: [], evidenceIds: ["e-1"], status: "open", sources: [], assessment, fitVersion: 1 };
+const job: Opportunity = { id: "j1", company: "Example New", title: "Developer Advocate", location: "Remote", url: postingUrl, whyMatch: "Relevant workshop experience", requirements: assessment.map(item => item.text), gaps: [], evidenceIds: ["e-1"], status: "open", sources: [], assessment, fitVersion: 2, requestContext: preferences };
 const requirementIds = assessment.map(item => item.id);
 
 // Career research starts only after this controlled identity has been selected.
@@ -71,7 +72,7 @@ function queryData<T>(request: Record<string, unknown>, marker: string): T {
 
 function qualificationFixture(request: Record<string, unknown>, criteria = assessment.map(({ text, importance, evidenceIds, support, reason }) => ({ requirement: text, importance, evidenceIds, support, reason }))): MockOutput {
   const jobs = queryData<Array<{ jobId: string; url: string }>>(request, "JOBS");
-  const rows = jobs.flatMap(job => criteria.map(criterion => ({ jobId: job.jobId, postingUrl: job.url, postingStatus: "open", ...criterion })));
+  const rows = jobs.flatMap(job => criteria.map(criterion => ({ jobId: job.jobId, postingUrl: job.url, postingStatus: "open", requestMatch: "match", ...criterion })));
   return { content: { criteria: rows },
     grounding: rows.flatMap((row, i) => [
       { field: `criteria[${i}].postingStatus`, citations: [{ url: row.postingUrl, title: "Primary posting" }] },
@@ -312,7 +313,7 @@ test("opportunities enforce exclusions, closed-role removal and selected IDs", a
     assert.doesNotMatch(String(requests[0].query), /UNSELECTED/);
     assert.equal(requests[0].type, "deep");
     assert.equal(requests.length, 2);
-    assert.equal(result.jobs[0].fitVersion, 1);
+    assert.equal(result.jobs[0].fitVersion, 2);
     assert.deepEqual(result.researchReceipts?.map(receipt => receipt.requestId), ["actual-provider-request", "qualification-request"]);
   });
 });
@@ -455,6 +456,57 @@ test("legacy jobs cannot bypass fit qualification before a paid resume call", as
     }
     assert.equal(requests.length, 0);
   });
+});
+
+test("full search requests reach both Deep stages and only matching verdicts reach the shortlist", async () => {
+  const cases = [
+    { roles: "DevRel at Anthropic", company: "Anthropic", title: "Developer Advocate", location: "Any location" },
+    { roles: "remote product management in healthcare", company: "Care Team", title: "Product Manager", location: "Any location" },
+    { roles: "backend engineering in SF at Exa", company: "Exa", title: "Software Engineer", location: "Any location" },
+    { roles: "Anthropic", company: "Anthropic", title: "Developer Advocate", location: "Remote" },
+    { roles: "DevRel at Anthropic or OpenAI", company: "OpenAI", title: "Developer Advocate", location: "Remote" },
+    { roles: "roles at Sales", company: "Sales", title: "Software Engineer", location: "Any location" }
+  ];
+  for (const item of cases) {
+    const requested = { ...preferences, roles: item.roles, location: item.location };
+    const discovered = { ...job, company: item.company, title: item.title };
+    for (const verdict of ["match", "mismatch", "uncertain"]) {
+      await mockDeep({ jobs: [discovered] }, async requests => {
+        const result = await researchOpportunities({ profile, preferences: requested });
+        assert.equal(requests.length, 2, "Discovery and qualification, without an extra intent call");
+        assert.ok(requests.every(request => String(request.query).includes(JSON.stringify(item.roles))));
+        assert.ok(requests.every(request => String(request.query).includes(item.location)));
+        assert.equal(result.fitVersion, 2);
+        assert.equal(result.jobs.length, verdict === "match" ? 1 : 0, `${item.roles}: ${verdict}`);
+        if (result.jobs.length) {
+          assert.deepEqual(result.jobs[0].requestContext, searchRequestContext(requested));
+          assert.equal(prepareResumeInput({ profile, preferences: requested, job: result.jobs[0] }).job.fitVersion, 2);
+        }
+      }, {}, { qualify: request => {
+        const output = qualificationFixture(request);
+        const content = output.content as { criteria: Array<Record<string, unknown>> };
+        content.criteria.forEach(row => { row.requestMatch = verdict; });
+        return output;
+      } });
+    }
+  }
+});
+
+test("stale or missing search context blocks tailoring before any paid call", async () => {
+  await mockDeep({}, async requests => {
+    for (const changed of [
+      { ...preferences, roles: "Developer relations at Anthropic" },
+      { ...preferences, location: "San Francisco" },
+      { ...preferences, excludedEmployers: ["Another Company"] }
+    ]) await assert.rejects(tailorResume({ profile, preferences: changed, job }), (error: unknown) => error instanceof AppError && error.code === "SEARCH_REQUEST_CHANGED");
+    for (const requestContext of [undefined, {}, { ...preferences, excludedEmployers: [3] }]) {
+      await assert.rejects(tailorResume({ profile, preferences, job: { ...job, requestContext } }), (error: unknown) => error instanceof AppError && error.code === "SEARCH_REQUEST_CHANGED");
+    }
+    assert.equal(requests.length, 0);
+  });
+  const reordered = { ...preferences, excludedEmployers: ["Example Previous", "Zoom Video Communications, Inc.", "Meta", "Meta"] };
+  assert.equal(matchesSearchRequest(job.requestContext, reordered), true);
+  assert.equal(prepareResumeInput({ profile, preferences: reordered, job }).job.fitVersion, 2);
 });
 
 test("same-origin guard runs before any paid operation", async () => {

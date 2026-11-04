@@ -45,7 +45,7 @@ export const qualificationSchema: DeepSchema = {
   additionalProperties: false,
   properties: {
     // A flat table avoids nesting requirement objects inside job objects.
-    // Nine total properties; repeat the posting identity on every criterion.
+    // Ten total properties; repeat the posting identity and request verdict on every criterion.
     criteria: {
       type: "array",
       maxItems: 120,
@@ -63,13 +63,14 @@ export const qualificationSchema: DeepSchema = {
             type: "string",
             enum: ["open", "closed", "unavailable"]
           },
+          requestMatch: { type: "string", enum: ["match", "mismatch", "uncertain"] },
           requirement: string,
           importance: { type: "string", enum: ["core", "required", "preferred"] },
           evidenceIds: stringArray,
           support: { type: "string", enum: ["direct", "transferable", "missing"] },
           reason: string
         },
-        required: ["jobId", "postingUrl", "postingStatus", "requirement", "importance", "evidenceIds", "support", "reason"]
+        required: ["jobId", "postingUrl", "postingStatus", "requestMatch", "requirement", "importance", "evidenceIds", "support", "reason"]
       }
     }
   },

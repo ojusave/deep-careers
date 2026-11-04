@@ -33,6 +33,8 @@ test("explicitly broad product scope covers product functions but not unrelated 
   for (const title of ["Product Manager", "Product Designer", "Product Marketing Manager", "Product Engineer", "Product Operations Analyst"]) assert.equal(matchesTargetRole(title, "All product roles"), true, title);
   assert.equal(matchesTargetRole("Developer Advocate", "All product roles"), false);
   assert.equal(matchesTargetRole("Sales Engineer", "All product roles"), false);
+  assert.equal(matchesTargetRole("Technical Lead", "All product roles"), true);
+  assert.equal(matchesTargetRole("PM, Platform", "All product roles"), true);
 });
 
 test("other common functions use synonyms and preserve explicit specializations", () => {
@@ -54,11 +56,11 @@ test("multiple explicit alternatives are matched independently", () => {
   assert.equal(matchesTargetRole("Sales Manager", "Product management or developer relations"), false);
 });
 
-test("unknown specific functions use meaningful words after removing seniority", () => {
+test("unknown functions defer to Deep rather than requiring words in a title", () => {
   assert.equal(matchesTargetRole("Director of Strategic Partnerships", "Head of partnerships"), true);
   assert.equal(matchesTargetRole("Director of Strategic Partnerships", "Partnerships manager"), true);
   assert.equal(matchesTargetRole("Senior Regulatory Affairs Specialist", "Regulatory affairs"), true);
-  assert.equal(matchesTargetRole("Developer Advocate", "Regulatory affairs"), false);
+  assert.equal(matchesTargetRole("Developer Advocate", "Regulatory affairs"), true);
   assert.equal(matchesTargetRole("Sales Manager", "Senior"), false);
 });
 
@@ -68,4 +70,16 @@ test("explicit open preferences allow all functions but specific open-to text ke
   assert.equal(matchesTargetRole("Product Manager", "Open to product management"), true);
   assert.equal(matchesTargetRole("", "Any role"), false);
   assert.equal(matchesTargetRole("Product Manager", ""), false);
+});
+
+test("rich requests defer to Deep without treating company, location or preference words as title tokens", () => {
+  for (const request of [
+    "DevRel at Anthropic", "remote product management in healthcare", "backend engineering in San Francisco at Exa",
+    "Anthropic", "DevRel at Anthropic or OpenAI", "roles at Smith & Jones, Inc.", "roles at AC/DC",
+    "engineering roles at a product marketing company", "not sales", "prefer remote", "open to roles at Product Manager Inc.",
+    "Any role at Product Marketing", "roles at Sales"
+  ]) assert.equal(matchesTargetRole("Software Engineer", request), true, request);
+  assert.equal(matchesTargetRole("Software Engineer", "Backend engineering"), true, "The duties may establish backend work");
+  assert.equal(matchesTargetRole("Developer Experience Engineer", "DevRel"), true, "An engineering title may describe DevRel duties");
+  assert.equal(matchesTargetRole("Software Engineer", "Developer relations"), true);
 });

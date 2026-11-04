@@ -151,6 +151,8 @@ export type Opportunity = {
   sources: Citation[];
   assessment?: RequirementAssessment[];
   fitVersion?: number;
+  /** Search preferences evaluated by Deep; a changed request needs a new assessment. */
+  requestContext?: Preferences;
 };
 
 /** The qualified shortlist and the receipts for finding and checking it. */

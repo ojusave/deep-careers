@@ -1,5 +1,6 @@
 /**
- * Interpret a requested job function and check titles against it. The form and server use the same rules so a broad request gets the same clarification on both sides.
+ * Clarify broad function choices and reject obvious title conflicts.
+ * Deep interprets the complete request; company and location words are not title keywords.
  */
 type RoleFamily = {
   request: RegExp;
@@ -15,8 +16,8 @@ const productDesign = /\bproduct (?:ux |ui )?design(?:er|ing)?\b/;
 const productEngineering = /\bproduct engineer(?:ing)?\b|\b(?:software |fullstack |frontend |backend )?engineer(?:ing)? product\b/;
 const devrel = /\bdevrel\b|\bdeveloper (?:relations|advocacy|advocates?|evangelism|evangelists?)\b/;
 
-// Small function vocabulary, not a ranking model. Unknown functions use a stricter
-// meaningful-word fallback. Matching never looks at the candidate's previous title.
+// This is only a conservative guard for short, standalone function requests.
+// Rich or unfamiliar requests need Deep's reading of the actual posting.
 const families: RoleFamily[] = [{
   request: new RegExp(`${productManagement.source}|\\bproduct management\\b|^pm$`),
   title: productManagement,
@@ -56,7 +57,7 @@ const families: RoleFamily[] = [{
 }, {
   request: /\b(?:software|frontend|backend|fullstack|web|mobile) (?:engineer|engineering|developer|development)\b|\bswe\b|^developer$/,
   title: /\b(?:software|frontend|backend|fullstack|web|mobile) (?:engineer|engineering|developer|development)\b|\bswe\b|\b(?:frontend|backend|fullstack) developer\b/,
-  vocabulary: ["software", "engineer", "engineering", "developer", "development", "swe"]
+  vocabulary: ["software", "frontend", "backend", "fullstack", "web", "mobile", "engineer", "engineering", "developer", "development", "swe"]
 }, {
   request: /\bengineer(?:ing)?\b/,
   title: /\bengineer(?:ing)?\b/,
@@ -105,17 +106,31 @@ function matchesOne(title: string, requested: string): boolean {
   const request = normalize(requested).replace(/^(?:i am |i m )?(?:looking for |seeking |open to )/, "");
   if (!request) return false;
   if (unrestricted(normalize(requested))) return true;
+  // Context clauses can contain role words as company names ("jobs at Sales").
+  // Even a familiar word must not become a function constraint in that case.
+  if (/\b(?:at|for|in|near|within|outside|except|excluding|without|not|prefer|ideally)\b/.test(request)) return true;
   if (isBroadProduct(request)) {
-    return [productManagement, productMarketing, productDesign, productEngineering, /\bproduct (?:analyst|analytics|operations|strategist|strategy|researcher|research)\b/].some(pattern => pattern.test(title));
+    return !devrel.test(title) && !/\b(?:sales|account executive)\b/.test(title);
   }
   const family = families.find(item => item.request.test(request));
-  if (family && !family.title.test(title)) return false;
   const required = meaningfulWords(request, family?.vocabulary);
   if (!family && !required.length) return false;
-  const actual = new Set(title.split(" "));
-  // A requested specialization still matters: backend engineering must not
-  // silently broaden into all engineering, for example.
-  return required.every(word => actual.has(word) || word.endsWith("s") && actual.has(word.slice(0, -1)));
+  // Extra words may express a company, location, preference, negation or domain.
+  // Do not guess what they mean, or require them to appear in the job title.
+  if (!family || required.length) return true;
+  if (devrel.test(title) && family.title !== devrel) return false;
+  if (/\bbackend\b/.test(request) && /\bfrontend\b/.test(title) && !/\b(?:backend|fullstack)\b/.test(title)) return false;
+  if (/\bfrontend\b/.test(request) && /\bbackend\b/.test(title) && !/\b(?:frontend|fullstack)\b/.test(title)) return false;
+  if (family.title.test(title)) return true;
+  const productFunctions = [productManagement, productMarketing, productDesign, productEngineering];
+  if (productFunctions.includes(family.title) && productFunctions.some(pattern => pattern.test(title))) return false;
+  if (family.title === devrel && productFunctions.some(pattern => pattern.test(title))) return false;
+  if ((family.title === productManagement || family.title === devrel) && /\b(?:sales|account executive)\b/.test(title)) return false;
+  if (/\bdata (?:analysis|analyst|analytics)\b/.test(request) && /\bdata scientist\b/.test(title)) return false;
+  if (/\bdata (?:science|scientist)\b/.test(request) && /\bdata analyst\b/.test(title)) return false;
+  // Other titles can overlap functions: a Developer Experience Engineer may do
+  // DevRel. Let Deep read the duties instead of extending a list of title aliases.
+  return true;
 }
 export function matchesTargetRole(title: string, requested: string): boolean {
   const actual = normalize(title);

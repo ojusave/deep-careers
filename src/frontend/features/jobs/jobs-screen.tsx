@@ -173,7 +173,7 @@ export function JobsScreen({
       </article>}
     </div> : <div className="empty-state">
       <h2>No supported matches yet</h2>
-      <p>The researched roles did not establish enough fit with your selected experience.</p>
+      <p>No roles passed your search and evidence checks.</p>
       {Boolean(opportunities.missingEvidence?.length) && <details className="details-block">
         <summary>Experience to clarify</summary>
         <ul className="plain-list">

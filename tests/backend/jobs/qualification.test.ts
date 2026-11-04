@@ -25,7 +25,7 @@ const qualified = (id = job.id, url = job.url): Assessment => ({ jobId: id, post
 
 // Test cases are grouped for readability; the provider response uses flat rows.
 function flatCriteria(assessments: Assessment[]) {
-  return assessments.flatMap(({ jobId, postingUrl, postingStatus, criteria }) => criteria.map(criterion => ({ jobId, postingUrl, postingStatus, ...criterion })));
+  return assessments.flatMap(({ jobId, postingUrl, postingStatus, criteria }) => criteria.map(criterion => ({ jobId, postingUrl, postingStatus, requestMatch: "match", ...criterion })));
 }
 function rowGrounding(criteria: ReturnType<typeof flatCriteria>): Grounding[] {
   return criteria.flatMap((criterion, index) => [
@@ -56,8 +56,8 @@ function properties(schema: unknown): number {
   return Object.entries(schema).reduce((n, [key, value]) => n + (key === "properties" && value && typeof value === "object" ? Object.keys(value).length : 0) + properties(value), 0);
 }
 
-test("qualifies all candidates in one Deep call using full page context and a flat nine-property schema", async () => {
-  assert.equal(properties(qualificationSchema), 9);
+test("qualifies all candidates in one Deep call using full page context and a flat ten-property schema", async () => {
+  assert.equal(properties(qualificationSchema), 10);
   const second = { ...job, id: "job-2", url: "https://careers.example.com/jobs/456" };
   await mockDeep([qualified(), qualified(second.id, second.url)], async requests => {
     const activities: Activity[] = [];
@@ -77,7 +77,7 @@ test("qualifies all candidates in one Deep call using full page context and a fl
     assert.deepEqual(accepted.evidenceIds, ["e-1", "e-2"]);
     assert.deepEqual(accepted.assessment?.map(item => item.id), ["job-1-r1", "job-1-r2"]);
     assert.equal(accepted.assessment?.[0].sources[0].url, job.url);
-    assert.equal(accepted.fitVersion, 1);
+    assert.equal(accepted.fitVersion, 2);
     assert.match(accepted.whyMatch, /^Evidence for: Lead customer discovery/);
     assert.doesNotMatch(accepted.whyMatch, /Overconfident|%/);
   });
@@ -375,4 +375,32 @@ test("no opportunities means no paid call; upstream failures never return unvett
     assert.ok(activities.some(item => item.id === "qualification:request" && item.state === "failed" && item.origin === "app"));
     assert.ok(!activities.some(item => item.state === "failed" && /completed/.test(item.label)));
   } finally { globalThis.fetch = original; if (oldKey === undefined) delete process.env.EXA_API_KEY; else process.env.EXA_API_KEY = oldKey; }
+});
+
+test("every requirement row must carry the same explicit request match verdict", async () => {
+  for (const verdicts of [["mismatch", "mismatch"], ["uncertain", "uncertain"], ["match", "mismatch"], ["match", "uncertain"], ["match", undefined], ["match", "yes"]]) {
+    const rows = flatCriteria([qualified()]).map((row, index) => ({ ...row, requestMatch: verdicts[index] as string }));
+    await mockDeep([], async () => {
+      const result = await qualifyOpportunities(profile, { ...preferences, roles: "Product management at Anthropic" }, [job]);
+      assert.equal(result.jobs.length, 0, JSON.stringify(verdicts));
+    }, rowGrounding(rows), rows);
+  }
+});
+
+test("Deep evaluates company, location, work mode and specialization in the original request", async () => {
+  // These mocked judgments test enforcement, not the real model's search accuracy.
+  for (const roles of ["DevRel at Anthropic", "remote product management in healthcare", "backend engineering in SF at Exa", "Anthropic", "DevRel at Anthropic or OpenAI", "roles at Smith & Jones, Inc.", "roles at AC/DC", "engineering roles at a product marketing company", "not sales", "prefer remote", "open to roles at Product Manager Inc."]) {
+    const requested = { ...preferences, roles, location: "Any location" };
+    await mockDeep([qualified()], async requests => {
+      const result = await qualifyOpportunities(profile, requested, [job]);
+      assert.equal(result.jobs.length, 1, roles);
+      assert.equal(result.jobs[0].requestContext?.roles, roles);
+      assert.equal(result.jobs[0].requestContext?.location, "Any location");
+      assert.ok(String(requests[0].query).includes(JSON.stringify(roles)));
+      assert.match(String(requests[0].systemPrompt), /soft preference alone must not reject/);
+      assert.match(String(requests[0].systemPrompt), /explicit hard constraints conflict, return uncertain/);
+    });
+    const rows = flatCriteria([qualified()]).map(row => ({ ...row, requestMatch: "mismatch" }));
+    await mockDeep([], async () => assert.equal((await qualifyOpportunities(profile, requested, [job])).jobs.length, 0, roles), rowGrounding(rows), rows);
+  }
 });

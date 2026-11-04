@@ -39,7 +39,8 @@ export async function discoverOpportunities(profile: Profile, preferences: Prefe
     stage: "opportunities",
     outputSchema: opportunitiesSchema,
     systemPrompt: `${safeguards}
-The requested job function is a HARD search constraint. The candidate's prior job titles must never override it.
+An explicitly required job function is a HARD search constraint. The candidate's prior job titles must never override it.
+Read the complete original request, including named companies, location, work arrangement, domain and specialization. Preserve alternatives and negations; company-only requests are valid. Treat prefer or ideally as soft preferences, not hard requirements. Any location is neutral and cannot override an explicit location or remote constraint in the query. Do not silently resolve contradictory hard constraints or broaden them to fill the list. Company names, locations and specializations need not be words in the title; inspect the posting's employer and actual duties.
 Use the selected background evidence to explain transferable experience and gaps WITHIN the requested function. Selection only includes evidence in this task; it does not mean the candidate verified the claim. Inspect the supplied sources and preserve uncertainty. For example, a developer advocate requesting product management should receive product-management openings and honest transition gaps, not developer-advocate jobs.
 The job title and core responsibilities must match the requested function. A company building a product does not make every job a product role. Never broaden to an unrelated function just to fill the list; return fewer or zero matches.
 Research live role pages, preferably employer careers sites or their ATS pages. Return a direct URL to each specific role, never a general search page. Find fewer roles if evidence is insufficient.
