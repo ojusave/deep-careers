@@ -1,0 +1,19 @@
+# One paid service runs the Next.js UI and its API routes together.
+services:
+  - type: web
+    name: deep-careers
+    runtime: node
+    region: oregon
+    plan: 1c-2g
+    numInstances: 1
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: 24.22.1
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      - key: EXA_API_KEY
+        sync: false
